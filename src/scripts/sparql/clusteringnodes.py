@@ -7,8 +7,8 @@ import sys
 from collections import OrderedDict
 from operator import itemgetter
 import pickle
-
-import pickle
+import src.algorithms.graphfeaturedetect as gfd
+from joblib import Parallel, delayed
 
 
 def print_query():
@@ -56,14 +56,14 @@ def hit_database(id, is_first_layer=True):
     return results
 
 
-pharma_neg = pickle.load( open( "/home/pjarnot/tmp/pharma_neg.pkl", "rb" ) )
-pharma_pos = pickle.load( open( "/home/pjarnot/tmp/pharma_pos.pkl", "rb" ) )
-pickle_nodes = {}
+# pharma_neg = pickle.load( open( "/home/pjarnot/tmp/pharma_neg.pkl", "rb" ) )
+# pharma_pos = pickle.load( open( "/home/pjarnot/tmp/pharma_pos.pkl", "rb" ) )
+# pickle_nodes = {}
 
-for k,v in pharma_neg.items():
-    pickle_nodes[k] = v
-for k,v in pharma_pos.items():
-    pickle_nodes[k] = v
+# for k,v in pharma_neg.items():
+#     pickle_nodes[k] = v
+# for k,v in pharma_pos.items():
+#     pickle_nodes[k] = v
 
 
 def hit_pickle(id):
@@ -118,8 +118,14 @@ def read_data(file_path):
     data = pd.read_csv(file_path, header=0, sep=";")
 
     for row in data.values:
-        if not math.isnan(row[0]):
-            retval[int(row[0])] = int(row[-1])
+        # if not math.isnan(row[0]):
+        print(row)
+        print(row[0])
+        print(row[1])
+        # if not math.isnan(row[1]):
+        #     # retval[int(row[0])] = int(row[-1])
+        #     retval[int(row[1])] = 1 if isinstance(row[7], str) else 0
+        retval[int(row[0])] = 1 if row[1] == "vMost-DILI-Concern" else 0
 
     return retval
 
@@ -181,46 +187,56 @@ def get_options():
 
 def main(options, args):
     drugs = read_data(options.input)
-    negative_dict = {}
-    positive_dict = {}
 
-    x = 0
-    results_neg = {}
-    results_pos = {}
+    results_negative = {}
+    results_positive = {}
     for drug_key, drug_val in drugs.items():
+        print("drug_key: {0}".format(drug_key))
+        paths = gfd.get_paths_by_node(drug_key)
+        nodes = gfd.get_nodes_from_paths(paths)
         if drug_val == 0:
-            results_neg[drug_key] = query_drug(drug_key, negative_dict)
+            gfd.count_items_in_set(nodes, results_negative)
         else:
-            results_pos[drug_key] = query_drug(drug_key, positive_dict)
-        x += 1
-        print("x: {0}".format(x), file=sys.stderr)
+            gfd.count_items_in_set(nodes, results_positive)
+    results_positive_filtered, results_negative_filtered = gfd.filter_results(results_positive, results_negative)
+    results_negative_2_filtered, results_positive_2_filtered = gfd.filter_results(results_negative, results_positive)
+    gfd.write_results("output_file_8_1.csv", results_positive_filtered, results_negative_filtered)
+    gfd.write_results("output_file_1_8.csv", results_positive_2_filtered, results_negative_2_filtered)
+    gfd.write_results("output_file.csv", results_positive, results_negative)
 
-    # go_deeper(negative_dict)
-    # go_deeper(positive_dict)
 
-    sort_results(negative_dict)
-    sort_results(positive_dict)
-
-    # print_first_only(negative_dict, positive_dict)
-    # print_first_only(positive_dict, negative_dict)
-
-    print_results(negative_dict)
-    print("------------------------------------")
-    print_results(positive_dict)
-
-    # Pickle to file
-    f = open("/home/pjarnot/tmp/pharma_neg_4_round.pkl","wb")
-    pickle.dump(results_neg,f)
-    f.close()
-
-    f = open("/home/pjarnot/tmp/pharma_pos_4_round.pkl","wb")
-    pickle.dump(results_pos,f)
-    f.close()
+# def job_main(drug_key):
+#     print("drug_key: {0}".format(drug_key))
+#     paths = gfd.get_paths_by_node(drug_key)
+#
+#
+# def main(options, args):
+#     drugs = read_data(options.input)
+#
+#     results_negative = {}
+#     results_positive = {}
+#
+#     element_information = Parallel(n_jobs=8)(delayed(job_main)(drug_key) for drug_key, drug_val in drugs.items())
+#     # for drug_key, drug_val in drugs.items():
+#     #     print("drug_key: {0}".format(drug_key))
+#     #     paths = gfd.get_paths_by_node(drug_key)
+#     #     pairs = gfd.get_pairs_from_paths(paths)
+#     #     if drug_val == 0:
+#     #         gfd.count_items_in_pairs(pairs, results_negative)
+#     #     else:
+#     #         gfd.count_items_in_pairs(pairs, results_positive)
 
 
 if __name__ == '__main__':
     options, args = get_options()
-    # options.input = "../../../data/dili/DILI-biohackathon (most-less-no).csv"
+    # options.input = "data/dili/DILI-biohackathon (most-less-no).csv"  # todo: comment
+    # options.input = "../../../data/dili/DILI-biohackathon (most-less-no).csv.orig"  # todo: comment
+    # options.input = "../../../data/dili/DILI.csv"  # todo: comment
+    # options.input = "../../../data/dili/EB_DILI.csv"  # todo: comment
+    # options.input = "../../../data/dili/EB_DILI.csv.short"  # todo: comment
+    # options.input = "../../../data/dili/EB_DILI.csv.short.short"  # todo: comment
+    options.input = "../../../data/dili/EB_DILI_first_iter.csv"  # todo: comment
+
     main(options, args)
 
 

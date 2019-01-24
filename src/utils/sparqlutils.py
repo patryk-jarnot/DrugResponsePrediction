@@ -1,20 +1,67 @@
+from SPARQLWrapper import SPARQLWrapper, JSON, DIGEST
+from src.domain.Path import Path
+from src.utils.passwords import SparqlCredentials
+import hashlib
+import os
+import pickle
 
 
-def hit_database(id, is_first_layer=True):
+# def hit_database(id, node, cache_path="/home/pjarnot/windata/tmp/sparql/"):
+def hit_database(id, node, cache_path="/home/pjarnot/tmp/sparql/"):
     sparql = SPARQLWrapper("http://pgxlod.loria.fr/sparql")
-    # sparql.setQuery("select <http://bio2rdf.org/pubchem.compound:%d> ?p ?o ?p2 ?o2 where {<http://bio2rdf.org/pubchem.compound:%d> ?p ?o. ?o ?p2 ?o2.} LIMIT 100" % (id, id))
-    if is_first_layer:
-        # sparql.setQuery("select ?p ?o where {<http://bio2rdf.org/pubchem.compound:%d> ?p ?o.} LIMIT 1000" % (id))
-        # sparql.setQuery("select ?p ?o ?p2 ?o2 ?p3 ?o3 where {<http://bio2rdf.org/pubchem.compound:%d> ?p ?o. ?o ?p2 ?o2. ?o2 ?p3 ?o3.} LIMIT 100000" % (id))
-        sparql.setQuery("select ?p ?o ?p2 ?o2 ?p3 ?o3 ?p4 ?o4 where {<http://bio2rdf.org/pubchem.compound:%d> ?p ?o. ?o ?p2 ?o2. ?o2 ?p3 ?o3. ?o3 ?p4 ?o4.} LIMIT 100000" % (id))
-    else:
-        # print("id: {0}".format(id), file=sys.stderr)
-        if not id.startswith("http"):
-            return None
-        sparql.setQuery("select ?p ?o where {<%s> ?p ?o.} LIMIT 1000" % (id))
-    sparql.setReturnFormat(JSON)
-    try:
-        results = sparql.query().convert()
-    except:
+
+    ''' Uncomment this if you want to switch to private server '''
+    # sparql = SPARQLWrapper("http://pgxlod-private.loria.fr/sparql")
+    # sparql.setHTTPAuth(DIGEST)
+    # sparql.setCredentials(SparqlCredentials.user, SparqlCredentials.password)
+
+    if not id.data.startswith("http"):
         return None
+
+    if cache_path is not None:
+        hash_object = hashlib.sha256(str(node).encode())
+        hex_node = hash_object.hexdigest()
+
+        hash_object = hashlib.sha256(id.data.encode())
+        hex_dig = hash_object.hexdigest()
+
+        tmp_dir = "{0}{1}".format(cache_path, hex_node)
+        tmp_file = "{0}{1}/{2}".format(cache_path, hex_node, hex_dig)
+    else:
+        tmp_dir = ""
+        tmp_file = ""
+
+    if not os.path.isdir(tmp_dir):
+        os.mkdir(tmp_dir)
+
+    if os.path.isfile(tmp_file):
+        try:
+            results = pickle.load( open( tmp_file, "rb" ) )
+        except EOFError:
+            results = None
+
+    else:
+        sparql.setQuery("select ?p ?o where {<%s> ?p ?o.} LIMIT 1000" % (id.data))
+        sparql.setReturnFormat(JSON)
+        try:
+            results = sparql.query().convert()
+
+            pickle.dump(results, open(tmp_file, "wb"))
+        except:
+            results = None
     return results
+
+
+def query_drug(id, node, depth):
+    results = hit_database(id, node)
+
+    if results is None:
+        return None
+
+    pairs = []
+    for result in results["results"]["bindings"]:
+        pair = Path.Pair(result["p"]["value"], result["o"]["value"], depth)
+
+        pairs.append(pair)
+
+    return pairs
